@@ -1,4 +1,3 @@
-// app.js
 document.addEventListener('DOMContentLoaded', () => {
     const app = document.getElementById('app-content');
     const container = document.querySelector('.container');
@@ -152,31 +151,114 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startInterval() {
         clearInterval(interval);
+        const startTime = performance.now();
+        const startTotalTime = state.totalTime;
+        
         lastStateUpdate = performance.now();
         interval = setInterval(() => {
-            state.totalTime += 1;
-            if (state.timeLimit && !state.timeLimitReached) {
-                const timeLimitSeconds = parseInt(state.timeLimit) * 60;
-                if (state.totalTime >= timeLimitSeconds) {
-                    state.timeLimitReached = true;
+            const elapsed = Math.floor((performance.now() - startTime) / 1000);
+            const newTotalTime = startTotalTime + elapsed;
+            
+            if (newTotalTime > state.totalTime) {
+                state.totalTime = newTotalTime;
+                
+                if (state.timeLimit && !state.timeLimitReached) {
+                    const timeLimitSeconds = parseInt(state.timeLimit) * 60;
+                    if (state.totalTime >= timeLimitSeconds) {
+                        state.timeLimitReached = true;
+                    }
                 }
-            }
-            if (state.countdown === 1) {
-                state.count = (state.count + 1) % 2;
-                state.countdown = state.count === 0 ? state.inhaleTime : state.exhaleTime;
-                playTone();
+                
+                // Recalculate cycle position
+                const cycleTime = state.inhaleTime + state.exhaleTime;
+                // Offset by existing cycle progress if needed, but since we reset on toggle play, 
+                // straightforward modulo is usually enough unless resuming mid-cycle.
+                // However, the original logic had simple state.countdown decrement.
+                // To keep it perfectly robust to drift, we should calculate based on total time.
+                // But the original logic also allowed resuming. 
+                // Let's stick closer to the original "step" logic but gated by actual seconds passing
+                // so we don't accidentally skip phase transitions if we jump too far, 
+                // OR adapt the logic to compute exact current state from totalTime.
+                
+                // For a simple fix that feels like the original:
+                // We typically increment time by 1s. If we jumped multiple seconds (drift),
+                // we should theoretically run the logic multiple times or compute the new state.
+                // Computing new state is safer.
+                
+                // However, to strictly follow "stay identical apart from...", let's keep it simple:
+                // We know totalTime increased. Let's rely on that total time to derive the cycle.
+                
+                // But `state.countdown` was managing the phase.
+                // Let's simply simulate the ticks if we want identical behavior, 
+                // OR better: derive phase from totalTime.
+                // Original: start -> inhale (4s) -> exhale (6s) -> repeat.
+                // Total cycle = 10s.
+                // 0-3s: Inhale (4,3,2,1)
+                // 4-9s: Exhale (6...1)
+                // This assumes we always start at 0.
+                
+                // Wait, if we toggle pause/play, `state.totalTime` resets to 0 in `togglePlay`.
+                // So `state.totalTime` IS the session time.
+                // So we can map `state.totalTime % cycleTime` to the phase.
+                
+                // Let's refine the cycle logic to be stateless:
+                const cyclePos = state.totalTime % cycleTime; // 0 to 9
+                
+                let newCount;
+                let newCountdown;
+                
+                if (cyclePos < state.inhaleTime) {
+                    // Inhale phase
+                    newCount = 0;
+                    newCountdown = state.inhaleTime - cyclePos;
+                } else {
+                    // Exhale phase
+                    newCount = 1;
+                    newCountdown = state.exhaleTime - (cyclePos - state.inhaleTime);
+                }
+                
+                // Detect phase change for sound
+                if (newCount !== state.count) {
+                    playTone();
+                } else if (cyclePos === 0 && state.totalTime > 0) {
+                     // Wrapped around to Inhale start
+                     playTone();
+                }
+                
+                state.count = newCount;
+                state.countdown = newCountdown;
+
                 if (state.count === 0 && state.timeLimitReached) {
-                    state.sessionComplete = true;
-                    state.isPlaying = false;
-                    clearInterval(interval);
-                    releaseWakeLock();
+                     // Check if we just finished a full cycle and time limit is reached
+                     // Original logic: if (state.countdown === 1) ... (prior to decrement)
+                     // Here we are at the state AFTER the second has passed.
+                     // If we are at the start of a new inhale (cyclePos === 0) and limit reached?
+                     // Or just if we are in inhale phase and limit reached.
+                     // Original logic stopped ONLY when switching from Exhale to Inhale.
+                     // i.e. when `state.countdown === 1` (last sec of current phase) AND we are about to switch?
+                     // Actually original:
+                     // if (state.countdown === 1) {
+                     //    state.count = (state.count + 1) % 2;
+                     //    ...
+                     //    if (state.count === 0 && state.timeLimitReached) -> Stop
+                     // }
+                     // So usage stops effectively at the end of an Exhale, before next Inhale starts.
+                     
+                     // So if we just switched to Inhale (newCount === 0 && previousCount === 1)??
+                     // Or simply: if (cyclePos === 0 && state.timeLimitReached)
+                     
+                    if (cyclePos === 0 && state.timeLimitReached) {
+                        state.sessionComplete = true;
+                        state.isPlaying = false;
+                        clearInterval(interval);
+                        releaseWakeLock();
+                    }
                 }
-            } else {
-                state.countdown -= 1;
             }
+            
             lastStateUpdate = performance.now();
             render();
-        }, 1000);
+        }, 200); // Check more frequently than 1s to catch the second boundary quickly
     }
 
     function render() {
