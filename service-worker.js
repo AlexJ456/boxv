@@ -1,14 +1,12 @@
-// service-worker.js
-const CACHE_NAME = 'relaxing-breathing-cache-v1'; // Versioned cache name
+const CACHE_NAME = 'relaxing-breathing-cache-v2'; // Versioned cache name
 const urlsToCache = [
   './',
   './index.html',
-  './app.js',           // Replace with your app’s JS file
+  './app.js',           // Replace with your app's JS file
   './manifest.json',    // Replace with your manifest file
   './icons/icon-192x192.png', // Adjust icon paths as needed
   './icons/icon-512x512.png'
 ];
-
 // Install event - cache assets
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -24,7 +22,6 @@ self.addEventListener('install', event => {
   // Activate immediately
   self.skipWaiting();
 });
-
 // Activate event - clean up old caches
 self.addEventListener('activate', event => {
   const cacheWhitelist = [CACHE_NAME];
@@ -44,7 +41,6 @@ self.addEventListener('activate', event => {
     })
   );
 });
-
 // Fetch event - serve from cache or network
 self.addEventListener('fetch', event => {
   event.respondWith(
@@ -54,17 +50,14 @@ self.addEventListener('fetch', event => {
           console.log('Serving from cache:', event.request.url);
           return response;
         }
-
         // Clone the request for fetching
         const fetchRequest = event.request.clone();
-
         return fetch(fetchRequest)
           .then(response => {
             // Validate response
             if (!response || response.status !== 200 || response.type !== 'basic') {
               return response;
             }
-
             // Clone and cache the response
             const responseToCache = response.clone();
             caches.open(CACHE_NAME)
@@ -72,7 +65,6 @@ self.addEventListener('fetch', event => {
                 console.log('Caching new resource:', event.request.url);
                 cache.put(event.request, responseToCache);
               });
-
             return response;
           })
           .catch(() => {
@@ -85,7 +77,6 @@ self.addEventListener('fetch', event => {
       })
   );
 });
-
 // Handle skip waiting messages
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
